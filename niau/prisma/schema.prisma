@@ -25,9 +25,17 @@ enum type {
 
 model ProductDetail {
   productID Int    @id @default(autoincrement())
-  productName String
+  brand String
+  image String
+  model String?
   color String
-  cost  Float
+  colorNumber String?
+  colorName String
+  glowy Int?
+  matte Int?
+  longLasting Int?
+  price  Float
+  amout Float
   whereToBuy  String
   skinTone  Tone
   productType category
