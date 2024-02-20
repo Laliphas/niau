@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import React from 'react';
 import Head from "next/head";
 import Image from "next/image";
 import Link from "next/link";
@@ -7,9 +8,16 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// ImageUploader component handles the image upload logic
-function ImageUploader() {
+export async function getStaticProps() {
+    const colors = await prisma.ProductDetail.findMany();
+    return {
+        props: { colors },
+    };
+}
+
+function ImageUploader({ colors }) {
     const [imageSrc, setImageSrc] = useState(null);
+    const [lipColor, setLipColor] = useState(colors[0]?.color || "#ffffff");
 
     useEffect(() => {
         const reader = new FileReader();
@@ -27,25 +35,58 @@ function ImageUploader() {
         fileInput.addEventListener('change', handleChange);
 
         return () => {
-            // Clean up event listener when component unmounts
             fileInput.removeEventListener('change', handleChange);
         };
-    }, []); // Empty dependency array ensures useEffect runs only once after initial render
+    }, []);
+
+    const applyLipFilter = () => {
+        if (imageSrc) {
+            const img = document.getElementById("img");
+            const canvas = document.createElement("canvas");
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext("2d");
+
+            ctx.drawImage(img, 0, 0, img.width, img.height);
+
+            const imageData = ctx.getImageData(0, 0, img.width, img.height);
+            const data = imageData.data;
+
+            for (let i = 0; i < data.length; i += 4) {
+                if (data[i + 3] === 0) continue;
+
+                data[i] = parseInt(lipColor.substr(1, 2), 16);
+                data[i + 1] = parseInt(lipColor.substr(3, 2), 16);
+                data[i + 2] = parseInt(lipColor.substr(5, 2), 16);
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+
+            setImageSrc(canvas.toDataURL());
+        }
+    };
+
+    const handleEditPhoto = () => {
+        const fileInput = document.getElementById("file");
+        fileInput.click();
+    };
 
     return (
-        <div className={styles.insertImage}> {/* Class tap at the top */}
-            {/* Your image input and display logic */}
-            <input id="file" type="file" accept="image/*" />
+        <div className={styles.insertImage}>
+            <input id="file" type="file" accept="image/*" style={{ display: 'none' }} />
+            <button onClick={handleEditPhoto}>Edit Photo</button>
             {imageSrc && <img id="img" src={imageSrc} alt="Uploaded Image" />}
+            <select value={lipColor} onChange={(e) => setLipColor(e.target.value)}>
+                {colors.map((color) => (
+                    <option key={color.productID} value={color.color}>{color.color}</option>
+                ))}
+            </select>
+            <button onClick={applyLipFilter}>Apply Lip Filter</button>
+
+            {/* Display color based on color code */}
+            <div className={styles.colorBox} style={{ backgroundColor: lipColor }}></div>
         </div>
     );
-}
-
-export async function getStaticProps() {
-    const colors = await prisma.ProductDetail.findMany();
-    return {
-        props: { colors },
-    };
 }
 
 export default function Tryon({ colors }) {
@@ -54,13 +95,7 @@ export default function Tryon({ colors }) {
             <Head>
                 <title>TryOn | niau</title>
             </Head>
-            <ul>
-                {colors.map((item) => (
-                    <li key={item.productID}>{item.color}</li>
-                ))}
-            </ul>
-            {/* Render the ImageUploader component */}
-            <ImageUploader />
+            <ImageUploader colors={colors} />
         </div>
     );
 }
