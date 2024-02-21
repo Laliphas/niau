@@ -5,8 +5,25 @@ import Image from "next/image";
 import Link from "next/link";
 import styles from "@/styles/Tryon.module.css";
 import { PrismaClient } from '@prisma/client';
+import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 const prisma = new PrismaClient();
+let faceLandmarker;
+
+async function createFaceLandmarker() {
+  const filesetResolver = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+  );
+  faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+    baseOptions: {
+      modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+      delegate: "GPU"
+    },
+    outputFaceBlendshapes: true,
+    runningMode: "IMAGE", // Set runningMode to 'IMAGE'
+    numFaces: 1
+  });
+}
 
 export async function getStaticProps() {
     const colors = await prisma.ProductDetail.findMany();
@@ -39,32 +56,52 @@ function ImageUploader({ colors }) {
         };
     }, []);
 
-    const applyLipFilter = () => {
-        if (imageSrc) {
-            const img = document.getElementById("img");
-            const canvas = document.createElement("canvas");
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext("2d");
+    useEffect(() => {
+        createFaceLandmarker();
+    }, []);
 
-            ctx.drawImage(img, 0, 0, img.width, img.height);
-
-            const imageData = ctx.getImageData(0, 0, img.width, img.height);
-            const data = imageData.data;
-
-            for (let i = 0; i < data.length; i += 4) {
-                if (data[i + 3] === 0) continue;
-
-                data[i] = parseInt(lipColor.substr(1, 2), 16);
-                data[i + 1] = parseInt(lipColor.substr(3, 2), 16);
-                data[i + 2] = parseInt(lipColor.substr(5, 2), 16);
-            }
-
-            ctx.putImageData(imageData, 0, 0);
-
-            setImageSrc(canvas.toDataURL());
+    async function applyLipFilter() {
+      if (imageSrc) {
+        const img = document.getElementById("img");
+    
+        try {
+          // Ensure image is loaded and has valid dimensions
+          if (!img.complete || img.width === 0 || img.height === 0) {
+            throw new Error("Image is not fully loaded or has invalid dimensions.");
+          }
+    
+          const faceLandmarks = await FaceLandmarker.detect(img);
+    
+          // Validate landmark indices and data
+          if (!faceLandmarks || !faceLandmarks[51] || !faceLandmarks[57]) {
+            throw new Error("Missing or invalid face landmarks.");
+          }
+    
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext("2d");
+    
+          ctx.drawImage(img, 0, 0, img.width, img.height);
+    
+          // Set line width and fill style
+          ctx.lineWidth = 2;
+          ctx.fillStyle = lipColor;
+    
+          // Draw lip line segment between valid landmarks
+          ctx.beginPath();
+          ctx.moveTo(faceLandmarks[51].x, faceLandmarks[51].y);
+          ctx.lineTo(faceLandmarks[57].x, faceLandmarks[57].y);
+          ctx.closePath();
+          ctx.stroke();
+    
+          setImageSrc(canvas.toDataURL()); // Assuming base64 encoding is desired
+        } catch (error) {
+          console.error("Error in applying lip filter:", error);
+          // Handle error gracefully, e.g., display a message to the user
         }
-    };
+      }
+    }
 
     const handleEditPhoto = () => {
         const fileInput = document.getElementById("file");
@@ -82,8 +119,6 @@ function ImageUploader({ colors }) {
                 ))}
             </select>
             <button onClick={applyLipFilter}>Apply Lip Filter</button>
-
-            {/* Display color based on color code */}
             <div className={styles.colorBox} style={{ backgroundColor: lipColor }}></div>
         </div>
     );
